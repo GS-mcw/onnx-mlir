@@ -1230,6 +1230,71 @@ public:
 };
 
 // =============================================================================
+// Rewrite pattern for GlobalLpPool
+// =============================================================================
+
+// Rewrite GlobalLpPool(X, p) as:
+//   ((sum over spatial dims of |X|^p)) ^ (1/p)
+// which is equivalent to LpPool with kernel size equal to the spatial
+// dimensions of the input tensor. Reuses existing Abs/Pow/ReduceSum ops (and
+// their Krnl lowerings) instead of a bespoke Krnl loop nest. For p == 1 this
+// degenerates into a plain sum of absolute values (no Pow needed).
+class GlobalLpPoolPattern : public OpRewritePattern<ONNXGlobalLpPoolOp> {
+public:
+  using OpRewritePattern<ONNXGlobalLpPoolOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(
+      ONNXGlobalLpPoolOp poolOp, PatternRewriter &rewriter) const override {
+    Location loc = poolOp.getLoc();
+    Value X = poolOp.getX();
+    ShapedType xType = mlir::dyn_cast<ShapedType>(X.getType());
+    if (!xType || !xType.hasRank())
+      return failure();
+    int64_t rank = xType.getRank();
+    if (rank < 3)
+      return failure(); // Invalid input; let the verifier/shape helper flag.
+    int64_t p = poolOp.getP();
+    if (p < 1)
+      return failure(); // Invalid p; let the verifier flag it.
+    Type elementType = xType.getElementType();
+    Type outputType = poolOp.getY().getType();
+
+    MultiDialectBuilder<OnnxBuilder> create(rewriter, loc);
+
+    // axes = [2, 3, ..., rank - 1] (all spatial dims).
+    SmallVector<int64_t, 4> axesVals;
+    for (int64_t i = 2; i < rank; ++i)
+      axesVals.emplace_back(i);
+    Value axes = create.onnx.constantInt64(axesVals);
+
+    Value absX = create.onnx.abs(X);
+
+    if (p == 1) {
+      Value result =
+          create.onnx.reduceSum(outputType, absX, axes, /*keepDims=*/true);
+      rewriter.replaceOp(poolOp, result);
+      return success();
+    }
+
+    Value pConst = create.onnx.constant(
+        DenseElementsAttr::get(RankedTensorType::get({}, elementType),
+            rewriter.getFloatAttr(elementType, static_cast<double>(p))));
+    Value powX = create.onnx.pow(absX, pConst);
+
+    Value sum =
+        create.onnx.reduceSum(outputType, powX, axes, /*keepDims=*/true);
+
+    Value invPConst = create.onnx.constant(
+        DenseElementsAttr::get(RankedTensorType::get({}, elementType),
+            rewriter.getFloatAttr(elementType, 1.0 / static_cast<double>(p))));
+    Value result = create.onnx.pow(sum, invPConst);
+
+    rewriter.replaceOp(poolOp, result);
+    return success();
+  }
+};
+
+// =============================================================================
 // Rewrite pattern for Power
 // =============================================================================
 
@@ -2776,6 +2841,12 @@ void ONNXEqualOp::getCanonicalizationPatterns(
 void ONNXGlobalAveragePoolOp::getCanonicalizationPatterns(
     RewritePatternSet &results, MLIRContext *context) {
   results.insert<GlobalAveragePoolPattern>(context);
+}
+
+/// on the ONNXGlobalLpPoolOp.
+void ONNXGlobalLpPoolOp::getCanonicalizationPatterns(
+    RewritePatternSet &results, MLIRContext *context) {
+  results.insert<GlobalLpPoolPattern>(context);
 }
 
 /// on the ONNXGlobalMaxPoolOp.
