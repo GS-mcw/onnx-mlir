@@ -12,7 +12,7 @@ func.func @test_col2im(%arg0 : tensor<1x5x5xf32>) -> tensor<1x1x5x5xf32> {
 // CHECK-DAG:   [[MAP_0_:#.+]] = affine_map<()[s0] -> (-s0 + 6)>
 // CHECK-DAG:   [[MAP_1_:#.+]] = affine_map<()[s0, s1] -> (s0)>
 // CHECK-DAG:   [[MAP_2_:#.+]] = affine_map<()[s0, s1] -> (s1)>
-// CHECK-DAG:   [[MAP_3_:#.+]] = affine_map<(d0, d1) -> (d0 - d1)>
+// CHECK-DAG:   [[MAP_3_:#.+]] = affine_map<(d0, d1) -> (-d0 + d1)>
 // CHECK-LABEL:  func.func @test_col2im
 // CHECK-SAME:   ([[PARAM_0_:%.+]]: memref<1x5x5xf32>) -> memref<1x1x5x5xf32> {
 // CHECK-DAG:       [[CST_0_dot_000000_:%.+]] = arith.constant 0.000000e+00 : f32
@@ -37,12 +37,12 @@ func.func @test_col2im(%arg0 : tensor<1x5x5xf32>) -> tensor<1x1x5x5xf32> {
 // CHECK-DAG:         [[LOOP_1_:%.+]]:2 = krnl.define_loops 2
 // CHECK:             krnl.iterate([[LOOP_1_]]#0, [[LOOP_1_]]#1) with ([[LOOP_1_]]#0 -> [[I_4_:%.+]] = 0 to [[MAP_1_]](){{.}}[[VAR_3_]], [[VAR_5_]]{{.}}, [[LOOP_1_]]#1 -> [[I_5_:%.+]] = 0 to [[MAP_2_]](){{.}}[[VAR_3_]], [[VAR_5_]]{{.}}){
 // CHECK:               [[VAR_14_:%.+]]:2 = krnl.get_induction_var_value([[LOOP_1_]]#0, [[LOOP_1_]]#1) : (!krnl.loop, !krnl.loop) -> (index, index)
-// CHECK:               [[VAR_15_:%.+]] = affine.apply [[MAP_3_]]([[VAR_10_]]#2, [[VAR_14_]]#0)
+// CHECK:               [[VAR_15_:%.+]] = affine.apply [[MAP_3_]]([[VAR_14_]]#0, [[VAR_10_]]#2)
 // CHECK-DAG:           [[VAR_16_:%.+]] = arith.cmpi sge, [[VAR_15_]], [[CST_0_]] : index
 // CHECK-DAG:           [[VAR_17_:%.+]] = arith.cmpi slt, [[VAR_15_]], [[VAR_7_]] : index
 // CHECK-NOT: separator of consecutive DAGs
 // CHECK-DAG:           [[VAR_18_:%.+]] = arith.andi [[VAR_16_]], [[VAR_17_]] : i1
-// CHECK-DAG:           [[VAR_19_:%.+]] = affine.apply [[MAP_3_]]([[VAR_10_]]#3, [[VAR_14_]]#1)
+// CHECK-DAG:           [[VAR_19_:%.+]] = affine.apply [[MAP_3_]]([[VAR_14_]]#1, [[VAR_10_]]#3)
 // CHECK-NOT: separator of consecutive DAGs
 // CHECK-DAG:           [[VAR_20_:%.+]] = arith.cmpi sge, [[VAR_19_]], [[CST_0_]] : index
 // CHECK-DAG:           [[VAR_21_:%.+]] = arith.cmpi slt, [[VAR_19_]], [[VAR_8_]] : index
